@@ -8,7 +8,11 @@ import random
 import time
 import re
 from typing import List, Dict, Optional, Tuple, Callable
-from playwright.sync_api import sync_playwright, Browser, BrowserContext, Page, Locator
+try:
+    from playwright.sync_api import sync_playwright, Browser, BrowserContext, Page, Locator
+except ImportError:  # pragma: no cover - allows config/tests without playwright installed
+    sync_playwright = None
+    Browser = BrowserContext = Page = Locator = None
 from dataclasses import dataclass, field
 
 __version__ = "2.0.0"
@@ -67,6 +71,29 @@ class ScraperConfig:
     # Browser settings
     headless: bool = False
     browser_type: str = "chromium"
+
+    # Reliability
+    max_retries: int = 3
+    retry_backoff: float = 1.5
+    proxy_failover: bool = True
+    circuit_breaker_threshold: int = 5
+    circuit_breaker_cooldown: float = 30.0
+
+    # Adaptive behavior
+    adaptive_delays: bool = True
+    enable_proxy_health: bool = True
+
+    def __post_init__(self):
+        if self.browser_type not in {"chromium", "firefox", "webkit"}:
+            raise ValueError("browser_type must be chromium, firefox, or webkit")
+        if self.max_retries < 1:
+            raise ValueError("max_retries must be >= 1")
+        if self.retry_backoff < 1.0:
+            raise ValueError("retry_backoff must be >= 1.0")
+        if not (0 <= self.action_delay_range[0] <= self.action_delay_range[1]):
+            raise ValueError("action_delay_range must be ordered and non-negative")
+        if not (0 <= self.reading_delay_range[0] <= self.reading_delay_range[1]):
+            raise ValueError("reading_delay_range must be ordered and non-negative")
 
 
 
@@ -165,6 +192,10 @@ class AntiBlockingScraper:
         self.request_count = 0
         self.session_count = 0
         self.honeypot_detector = HoneypotDetector() if config.detect_honeypots else None
+
+        # Adaptive reliability state
+        self.proxy_health = {}
+        self.recent_failures = 0
         
         if not self.config.user_agents:
             self.config.user_agents = self._get_default_user_agents()
@@ -189,9 +220,28 @@ class AntiBlockingScraper:
     def _get_next_proxy(self) -> Optional[ProxyServer]:
         if not self.config.proxies:
             return None
-        proxy = self.config.proxies[self.current_proxy_index]
-        self.current_proxy_index = (self.current_proxy_index + 1) % len(self.config.proxies)
+
+        # Prefer healthy proxies when health tracking is enabled
+        if self.config.enable_proxy_health:
+            healthy = [p for p in self.config.proxies if self.proxy_health.get(p.server, 1.0) >= 0.5]
+            pool = healthy or self.config.proxies
+        else:
+            pool = self.config.proxies
+
+        # Round-robin within the selected pool
+        proxy = pool[self.current_proxy_index % len(pool)]
+        self.current_proxy_index = (self.current_proxy_index + 1) % len(pool)
         return proxy
+
+    def record_proxy_result(self, proxy: Optional[ProxyServer], success: bool):
+        if not proxy or not self.config.enable_proxy_health:
+            return
+        score = self.proxy_health.get(proxy.server, 1.0)
+        if success:
+            score = min(1.0, score + 0.1)
+        else:
+            score = max(0.0, score - 0.25)
+        self.proxy_health[proxy.server] = score
     
     def _get_random_user_agent(self) -> str:
         return random.choice(self.config.user_agents)
@@ -342,9 +392,16 @@ class AntiBlockingScraper:
     def random_delay(self, min_sec: float = None, max_sec: float = None):
         if not self.config.enable_human_behavior:
             return
-        
+
         min_s = min_sec if min_sec is not None else self.config.action_delay_range[0]
         max_s = max_sec if max_sec is not None else self.config.action_delay_range[1]
+
+        # Adaptive delays increase when recent failures are detected
+        if self.config.adaptive_delays and self.recent_failures > 0:
+            factor = 1 + (self.recent_failures * 0.25)
+            min_s *= factor
+            max_s *= factor
+
         delay = random.uniform(min_s, max_s)
         time.sleep(delay)
     
@@ -507,19 +564,48 @@ class AntiBlockingScraper:
                     page = context.new_page()
                     self.request_count = 0
                 
-                try:
-                    # Navigate to URL
-                    self.navigate(page, url)
-                    
-                    # Execute scraping callback
-                    result = scrape_callback(page, url)
-                    results.append(result)
-                    
-                    print(f"✓ Successfully scraped: {url}")
-                    
-                except Exception as e:
-                    print(f"✗ Error scraping {url}: {e}")
-                    results.append(None)
+                # Circuit breaker: pause if too many consecutive failures
+                if self.recent_failures >= self.config.circuit_breaker_threshold:
+                    print(f"⛔ Circuit breaker open: cooling down for {self.config.circuit_breaker_cooldown}s")
+                    time.sleep(self.config.circuit_breaker_cooldown)
+                    self.recent_failures = 0
+
+                attempt = 0
+                success = False
+                proxy_used = self._get_next_proxy() if self.config.proxies else None
+                while attempt < self.config.max_retries and not success:
+                    attempt += 1
+                    try:
+                        # Navigate to URL
+                        self.navigate(page, url)
+
+                        # Execute scraping callback
+                        result = scrape_callback(page, url)
+                        results.append(result)
+
+                        print(f"✓ Successfully scraped: {url}")
+                        success = True
+                        self.recent_failures = 0
+                        self.record_proxy_result(proxy_used, True)
+
+                    except Exception as e:
+                        print(f"✗ Attempt {attempt}/{self.config.max_retries} failed for {url}: {e}")
+                        self.recent_failures += 1
+                        self.record_proxy_result(proxy_used, False)
+                        if attempt < self.config.max_retries:
+                            backoff = self.config.retry_backoff ** attempt
+                            print(f"  Retrying in {backoff:.1f}s...")
+                            time.sleep(backoff)
+                            if self.config.proxy_failover and self.config.proxies:
+                                print("  Rotating proxy/session...")
+                                if context:
+                                    context.close()
+                                context = self.create_stealth_context(browser)
+                                page = context.new_page()
+                                self.request_count = 0
+                                proxy_used = self._get_next_proxy()
+                        else:
+                            results.append(None)
                 
                 # Random delay between requests
                 if i < len(urls) - 1:
