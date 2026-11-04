@@ -2,6 +2,8 @@
 
 A production-ready Python toolkit for building resilient web scrapers with Playwright. It combines stealth browser contexts, human-like interaction, proxy rotation, honeypot evasion, and anti-fingerprinting techniques to help automate data collection responsibly.
 
+![Anti-Scraping Playwright](docs/banner.png)
+
 ## Features
 
 - **User Agent Rotation** — Round-robin and random selection from a curated list of modern user agents.
