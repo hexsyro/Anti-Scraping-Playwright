@@ -17,14 +17,6 @@ dependencies = [
 [project.urls]
 Homepage = "https://github.com/example/anti-scraping-playwright"
 
-[tool.setuptools]
-py-modules = [
-    "anti_block_scraper",
-    "ProxyServers",
-    "UserAgentRotator",
-    "StealthContext",
-    "AntiFingerprinting",
-    "DelayBehavior",
-    "HoneyPotEscape",
-    "MouseMovement",
-]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["anti_scraping_playwright*"]

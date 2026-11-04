@@ -25,7 +25,7 @@ REQUIREMENTS:
 - Playwright installed
 """
 
-from anti_block_scraper import AntiBlockingScraper, ScraperConfig
+from anti_scraping_playwright import AntiBlockingScraper, ScraperConfig
 import json
 from datetime import datetime
 from playwright.sync_api import Page

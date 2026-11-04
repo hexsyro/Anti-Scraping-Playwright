@@ -1,6 +1,6 @@
 import pytest
 
-from anti_block_scraper import ScraperConfig
+from anti_scraping_playwright.scraper import ScraperConfig
 
 
 def test_valid_config_defaults():
