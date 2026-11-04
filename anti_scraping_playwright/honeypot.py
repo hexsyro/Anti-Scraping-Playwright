@@ -211,7 +211,7 @@ class HoneypotDetector:
                         reasons.append(f"suspicious text: '{text}'")
                     
                     if reasons:
-                        href = link.get_attribute('href') or ''
+                        link.get_attribute('href')
                         honeypots.append(HoneypotElement(
                             selector=f"a:nth-of-type({i+1})",
                             element_type='link',
@@ -432,7 +432,7 @@ def example_detect_honeypots():
         """)
         
         print("\n🔍 Scanning page for honeypots...")
-        honeypots = detector.detect_all_honeypots(page)
+        detector.detect_all_honeypots(page)
         
         detector.print_report()
         detector.save_report("honeypot_report.json")
@@ -521,7 +521,7 @@ def example_safe_form_filling():
         """)
         
         print("\n🔍 Detecting honeypot fields...")
-        honeypots = detector.detect_all_honeypots(page)
+        detector.detect_all_honeypots(page)
         detector.print_report()
         
         all_inputs = page.locator('input[type="text"], input[type="email"], input[type="tel"]').all()
@@ -562,9 +562,9 @@ def example_real_world_scraping():
         page.goto("https://news.ycombinator.com")
         
         print("\n🔍 Scanning for honeypots...")
-        honeypots = detector.detect_all_honeypots(page)
+        detected = detector.detect_all_honeypots(page)
         
-        if honeypots:
+        if detected:
             detector.print_report()
         else:
             print("✓ No honeypots detected on this page")

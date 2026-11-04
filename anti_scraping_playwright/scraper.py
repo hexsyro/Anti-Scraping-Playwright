@@ -148,7 +148,7 @@ class HoneypotDetector:
                 visibility_score = 0
             
             return visibility_score < 0.3, visibility_score
-        except:
+        except Exception:
             return False, 1.0
     
     def check_honeypot_patterns(self, element) -> bool:
@@ -167,7 +167,7 @@ class HoneypotDetector:
                     if re.search(pattern, str(attr_value), re.IGNORECASE):
                         return True
             return False
-        except:
+        except Exception:
             return False
     
     def is_safe_element(self, page: Page, element: Locator) -> bool:
@@ -178,7 +178,7 @@ class HoneypotDetector:
                 return False
             matches_pattern = self.check_honeypot_patterns(element_handle)
             return not matches_pattern
-        except:
+        except Exception:
             return False
 
 
@@ -383,10 +383,11 @@ class AntiBlockingScraper:
         context = browser.new_context(**context_options)
         
         self.session_count += 1
+        self.last_proxy = proxy
         print(f"✓ Created stealth session #{self.session_count}")
         if proxy:
             print(f"  Proxy: {proxy.server}")
-        
+
         return context
     
     def random_delay(self, min_sec: float = None, max_sec: float = None):
@@ -505,13 +506,13 @@ class AntiBlockingScraper:
         return self.request_count >= self.config.requests_per_session
     
     def navigate(self, page: Page, url: str, wait_for: str = "load"):
-        print(f"→ Navigating to: {url}")
-        page.goto(url, wait_until=wait_for)
-        
-        # Apply stealth and anti-fingerprinting
+        # Apply stealth and anti-fingerprinting before navigation
         self._apply_stealth_mode(page)
         self._apply_anti_fingerprinting(page)
-        
+
+        print(f"→ Navigating to: {url}")
+        page.goto(url, wait_until=wait_for)
+
         # Random initial delay (reading page)
         if self.config.enable_human_behavior:
             time.sleep(random.uniform(*self.config.reading_delay_range))
@@ -572,7 +573,7 @@ class AntiBlockingScraper:
 
                 attempt = 0
                 success = False
-                proxy_used = self._get_next_proxy() if self.config.proxies else None
+                proxy_used = getattr(self, "last_proxy", None)
                 while attempt < self.config.max_retries and not success:
                     attempt += 1
                     try:
@@ -603,7 +604,7 @@ class AntiBlockingScraper:
                                 context = self.create_stealth_context(browser)
                                 page = context.new_page()
                                 self.request_count = 0
-                                proxy_used = self._get_next_proxy()
+                                proxy_used = getattr(self, "last_proxy", None)
                         else:
                             results.append(None)
                 
@@ -663,10 +664,10 @@ def example_basic_scraping():
         
         return {"url": url, "length": len(content)}
     
-    results = scraper.scrape_with_rotation(urls, scrape_page)
+    scraper.scrape_with_rotation(urls, scrape_page)
     
     print(f"\n{'='*70}")
-    print(f"Scraped {len(results)} pages successfully")
+    print("Scraped pages successfully")
     print('='*70)
 
 
@@ -690,7 +691,7 @@ def example_with_tor():
         return {"url": url, "title": title}
     
     urls = ["https://check.torproject.org/"]
-    results = scraper.scrape_with_rotation(urls, scrape_page)
+    scraper.scrape_with_rotation(urls, scrape_page)
 
 
 def example_form_submission():
@@ -715,7 +716,7 @@ def example_form_submission():
         return {"status": "submitted"}
     
     urls = ["https://example.com/form"]
-    results = scraper.scrape_with_rotation(urls, fill_form)
+    scraper.scrape_with_rotation(urls, fill_form)
 
 
 def example_advanced_scraping():
@@ -746,7 +747,7 @@ def example_advanced_scraping():
         return articles
     
     urls = ["https://news.ycombinator.com"]
-    results = scraper.scrape_with_rotation(urls, scrape_news)
+    scraper.scrape_with_rotation(urls, scrape_news)
 
 
 

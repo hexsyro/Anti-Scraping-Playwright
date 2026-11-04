@@ -162,21 +162,21 @@ def step3_scrape_with_metadata(page: Page, url: str, scraper: AntiBlockingScrape
             points = "N/A"
             try:
                 points = metadata_row.locator('span.score').text_content()
-            except:
+            except Exception:
                 pass
             
             # TODO: Extract author
             author = "N/A"
             try:
                 author = metadata_row.locator('a.hnuser').text_content()
-            except:
+            except Exception:
                 pass
             
             # TODO: Extract time
             time_posted = "N/A"
             try:
                 time_posted = metadata_row.locator('span.age').get_attribute('title')
-            except:
+            except Exception:
                 pass
             
             # TODO: Extract comment count
@@ -184,7 +184,7 @@ def step3_scrape_with_metadata(page: Page, url: str, scraper: AntiBlockingScrape
             try:
                 comment_link = metadata_row.locator('a:has-text("comment")').first
                 comments = comment_link.text_content().split()[0]
-            except:
+            except Exception:
                 pass
             
             results.append({

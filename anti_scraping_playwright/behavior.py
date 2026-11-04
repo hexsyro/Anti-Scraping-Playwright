@@ -185,7 +185,7 @@ def example_search():
         try:
             page.click("button:has-text('Accept')", timeout=2000)
             human.random_delay(0.5, 1.0)
-        except:
+        except Exception:
             pass
         
         human.reading_delay(50)
