@@ -14,6 +14,12 @@ dependencies = [
     "playwright>=1.40",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.15",
+]
+
 [project.urls]
 Homepage = "https://github.com/example/anti-scraping-playwright"
 
