@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "anti-scraping-playwright"
+version = "2.0.0"
+description = "Production-ready anti-blocking web scraping framework for Playwright Python"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Anti-Scraping Playwright Maintainers" }]
+dependencies = [
+    "playwright>=1.40",
+]
+
+[project.urls]
+Homepage = "https://github.com/example/anti-scraping-playwright"
+
+[tool.setuptools]
+py-modules = [
+    "anti_block_scraper",
+    "ProxyServers",
+    "UserAgentRotator",
+    "StealthContext",
+    "AntiFingerprinting",
+    "DelayBehavior",
+    "HoneyPotEscape",
+    "MouseMovement",
+]
