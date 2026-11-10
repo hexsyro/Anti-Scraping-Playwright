@@ -56,6 +56,7 @@ def human_mouse_move(
 
 
 def human_click(page, x: float, y: float):
+    page.mouse.move(x, y)
     time.sleep(random.uniform(0.08, 0.25))
     page.mouse.down()
     time.sleep(random.uniform(0.04, 0.12))

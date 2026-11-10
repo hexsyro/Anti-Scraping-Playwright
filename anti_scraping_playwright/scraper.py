@@ -161,8 +161,9 @@ class HoneypotDetector:
                 })
             """)
             
+            key_map = {'class': 'className', 'id': 'id', 'name': 'name'}
             for attr_name, patterns in self.honeypot_patterns.items():
-                attr_value = attrs.get(attr_name, '')
+                attr_value = attrs.get(key_map.get(attr_name, attr_name), '')
                 for pattern in patterns:
                     if re.search(pattern, str(attr_value), re.IGNORECASE):
                         return True

@@ -26,6 +26,8 @@ REQUIREMENTS:
 """
 
 from anti_scraping_playwright import AntiBlockingScraper, ScraperConfig
+
+from anti_scraping_playwright.scraper import sync_playwright
 import json
 from datetime import datetime
 from playwright.sync_api import Page
