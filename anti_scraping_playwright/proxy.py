@@ -88,15 +88,16 @@ class CleanSessionManager:
             user_agent = random.choice(self.user_agents)
         
         # Create completely fresh context
-        context = browser.new_context(
-            proxy=proxy.to_playwright_format(),
-            user_agent=user_agent,
-            viewport={"width": 1920, "height": 1080},
-            locale="en-US",
-            timezone_id="America/New_York",
-            ignore_https_errors=True,
-            **context_options
-        )
+        options = {
+            "proxy": proxy.to_playwright_format(),
+            "user_agent": user_agent,
+            "viewport": {"width": 1920, "height": 1080},
+            "locale": "en-US",
+            "timezone_id": "America/New_York",
+            "ignore_https_errors": True,
+        }
+        options.update(context_options)
+        context = browser.new_context(**options)
         
         self.session_count += 1
         self.sessions_history.append({
