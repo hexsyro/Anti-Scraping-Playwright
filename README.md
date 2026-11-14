@@ -107,9 +107,24 @@ docs/
 
 ## Running Tests
 
+Run the full workflow test suite (the same checks executed by the GitHub Actions
+`CI` workflow on every pull request) before opening a PR:
+
+```bash
+make workflow
+```
+
+Or run the individual checks:
+
 ```bash
 python -m pytest -q
+python -m ruff check .
+python -m compileall anti_scraping_playwright tests examples
 ```
+
+The `CI` workflow (`.github/workflows/ci.yml`) runs these checks across Python
+3.10–3.13 on every pull request, so running them locally first helps identify
+bugs before review.
 
 ## Examples
 
