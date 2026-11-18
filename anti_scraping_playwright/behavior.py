@@ -1,7 +1,14 @@
 import random
 import time
 from typing import Tuple
-from playwright.sync_api import Page
+
+try:
+    from playwright.sync_api import Page
+except ImportError:  # pragma: no cover - allows import without Playwright
+    from typing import Any
+    Page = Any
+
+from ._compat import safe_print
 
 class HumanBehavior:
     
@@ -27,27 +34,27 @@ class HumanBehavior:
         time.sleep(delay)
     
     def human_type(self, page: Page, selector: str, text: str, mistakes: bool = True):
-        element = page.locator(selector)
+        element = page.locator(selector).first
         element.click()
-        
+
         self.random_delay(0.1, 0.5)
-        
+
         for i, char in enumerate(text):
             if mistakes and random.random() < 0.05 and i < len(text) - 1:
                 wrong_char = random.choice('abcdefghijklmnopqrstuvwxyz')
-                element.type(wrong_char, delay=random.randint(*self.typing_speed_range))
+                element.press_sequentially(wrong_char, delay=random.randint(*self.typing_speed_range))
                 time.sleep(random.uniform(0.1, 0.3))
                 page.keyboard.press('Backspace')
                 time.sleep(random.uniform(0.05, 0.15))
-            
-            element.type(char, delay=random.randint(*self.typing_speed_range))
-            
+
+            element.press_sequentially(char, delay=random.randint(*self.typing_speed_range))
+
             if random.random() < 0.1:
                 time.sleep(random.uniform(0.2, 0.8))
-    
+
     def human_click(self, page: Page, selector: str):
-        element = page.locator(selector)
-        
+        element = page.locator(selector).first
+
         box = element.bounding_box()
         if box:
             x = box['x'] + box['width'] * random.uniform(0.3, 0.7)
@@ -60,7 +67,8 @@ class HumanBehavior:
         self.random_delay(0.3, 1.0)
     
     def human_scroll(self, page: Page, scrolls: int = 3):
-        viewport_height = page.viewport_size['height']
+        viewport = page.viewport_size or {"width": 1280, "height": 720}
+        viewport_height = viewport['height']
         
         for _ in range(scrolls):
             scroll_amount = viewport_height * random.uniform(0.3, 0.8)
@@ -75,17 +83,17 @@ class HumanBehavior:
             self.reading_delay(random.randint(50, 200))
     
     def random_mouse_movement(self, page: Page, movements: int = 3):
-        viewport = page.viewport_size
-        
+        viewport = page.viewport_size or {"width": 1280, "height": 720}
+
         for _ in range(movements):
-            x = random.randint(0, viewport['width'])
-            y = random.randint(0, viewport['height'])
+            x = random.randint(0, max(0, viewport['width'] - 1))
+            y = random.randint(0, max(0, viewport['height'] - 1))
             
             page.mouse.move(x, y)
             time.sleep(random.uniform(0.1, 0.5))
     
     def hover_element(self, page: Page, selector: str):
-        element = page.locator(selector)
+        element = page.locator(selector).first
         box = element.bounding_box()
         
         if box:
@@ -105,22 +113,22 @@ def example_form_filling():
         browser = p.chromium.launch(headless=False)
         page = browser.new_page()
         
-        print("Navigating to form...")
+        safe_print("Navigating to form...")
         page.goto("https://www.example.com/form")  # Replace with actual form URL
         
         human.reading_delay(100)
         
         human.random_mouse_movement(page, 2)
         
-        print("Filling name field...")
+        safe_print("Filling name field...")
         human.human_type(page, "#name", "John Doe", mistakes=True)
         
-        print("Filling email field...")
+        safe_print("Filling email field...")
         human.human_type(page, "#email", "john.doe@example.com", mistakes=True)
         
         human.random_delay(1.0, 2.0)
         
-        print("Clicking submit...")
+        safe_print("Clicking submit...")
         human.human_click(page, "#submit")
         
         page.wait_for_timeout(3000)
@@ -138,28 +146,28 @@ def example_browsing():
         browser = p.chromium.launch(headless=False)
         page = browser.new_page()
         
-        print("Loading page...")
+        safe_print("Loading page...")
         page.goto("https://news.ycombinator.com")
         
-        print("Reading page...")
+        safe_print("Reading page...")
         human.reading_delay(200)
         
-        print("Scrolling...")
+        safe_print("Scrolling...")
         human.human_scroll(page, scrolls=4)
         
-        print("Moving mouse naturally...")
+        safe_print("Moving mouse naturally...")
         human.random_mouse_movement(page, 3)
         
         links = page.locator("a.titlelink").all()[:5]
         for i, link in enumerate(links):
-            print(f"Hovering link {i+1}...")
+            safe_print(f"Hovering link {i+1}...")
             box = link.bounding_box()
             if box:
                 page.mouse.move(box['x'] + box['width']/2, box['y'] + box['height']/2)
                 time.sleep(random.uniform(0.3, 1.0))
         
         if links:
-            print("Clicking random article...")
+            safe_print("Clicking random article...")
             random_link = random.choice(links[:5])
             human.human_click(page, f"text={random_link.text_content()}")
             
@@ -179,7 +187,7 @@ def example_search():
         browser = p.chromium.launch(headless=False)
         page = browser.new_page()
         
-        print("Going to search engine...")
+        safe_print("Going to search engine...")
         page.goto("https://www.google.com")
         
         try:
@@ -190,21 +198,21 @@ def example_search():
         
         human.reading_delay(50)
         
-        print("Typing search query...")
+        safe_print("Typing search query...")
         human.human_type(page, "textarea[name='q']", "playwright automation", mistakes=True)
         
-        print("Submitting search...")
+        safe_print("Submitting search...")
         page.keyboard.press("Enter")
         
         page.wait_for_load_state("networkidle")
         human.reading_delay(100)
         
-        print("Browsing results...")
+        safe_print("Browsing results...")
         human.human_scroll(page, scrolls=3)
         
         results = page.locator("h3").all()
         if results:
-            print("Clicking a result...")
+            safe_print("Clicking a result...")
             human.human_click(page, f"h3 >> nth={random.randint(0, min(3, len(results)-1))}")
             
             human.reading_delay(250)
@@ -223,24 +231,24 @@ def example_shopping():
         browser = p.chromium.launch(headless=False)
         page = browser.new_page()
         
-        print("Loading e-commerce site...")
+        safe_print("Loading e-commerce site...")
         page.goto("https://www.example-shop.com")  # Replace with actual site
         
-        print("Looking at products...")
+        safe_print("Looking at products...")
         human.reading_delay(150)
         human.human_scroll(page, scrolls=2)
         
-        print("Hovering over products...")
+        safe_print("Hovering over products...")
         human.random_mouse_movement(page, 4)
         
-        print("Clicking product...")
+        safe_print("Clicking product...")
         # This would be replaced with actual product selectors
         # human.human_click(page, ".product-card >> nth=0")
         
         human.reading_delay(200)
         human.human_scroll(page, scrolls=2)
         
-        print("Going back...")
+        safe_print("Going back...")
         page.go_back()
         human.random_delay(1.0, 2.0)
         
@@ -248,19 +256,19 @@ def example_shopping():
 
 
 if __name__ == "__main__":
-    print("=" * 60)
-    print("Human Behavior Simulation Examples")
-    print("=" * 60)
+    safe_print("=" * 60)
+    safe_print("Human Behavior Simulation Examples")
+    safe_print("=" * 60)
     
     # Uncomment to run examples
-    # print("\n1. Form Filling Example")
+    # safe_print("\n1. Form Filling Example")
     # example_form_filling()
     
-    print("\n2. Browsing Example")
+    safe_print("\n2. Browsing Example")
     example_browsing()
     
-    # print("\n3. Search Example")
+    # safe_print("\n3. Search Example")
     # example_search()
     
-    # print("\n4. Shopping Example")
+    # safe_print("\n4. Shopping Example")
     # example_shopping()

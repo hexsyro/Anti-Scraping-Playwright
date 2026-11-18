@@ -21,7 +21,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/example/anti-scraping-playwright"
+Homepage = "https://github.com/hexsyro/Anti-Scraping-Playwright"
+Repository = "https://github.com/hexsyro/Anti-Scraping-Playwright"
 
 [tool.setuptools.packages.find]
 where = ["."]

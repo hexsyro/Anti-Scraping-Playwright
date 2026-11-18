@@ -1,8 +1,15 @@
 import re
 from typing import List, Optional, Tuple
-from playwright.sync_api import Page, Locator, ElementHandle
 from dataclasses import dataclass
 import json
+
+try:
+    from playwright.sync_api import Page, Locator, ElementHandle
+except ImportError:  # pragma: no cover - allows import without Playwright
+    from typing import Any
+    Page = Locator = ElementHandle = Any
+
+from ._compat import safe_print
 
 @dataclass
 class HoneypotElement:
@@ -24,15 +31,15 @@ class HoneypotDetector:
                 r'visually-hidden', r'sr-only', r'off-screen', r'robot-trap'
             ],
             'id': [
-                r'honeypot', r'hp', r'trap', r'bot-field', r'anti-spam',
+                r'honeypot', r'(^|[-_])hp([-_]|$)', r'trap', r'bot-field', r'anti-spam',
                 r'hidden', r'invisible', r'fake-field', r'decoy'
             ],
             'name': [
-                r'honeypot', r'hp', r'email_confirm', r'website', r'url',
+                r'honeypot', r'(^|[-_])hp([-_]|$)', r'email_confirm',
                 r'phone_confirm', r'trap', r'bot-field'
             ],
-            'aria-hidden': [r'true'],
-            'data-honeypot': [r'.*']
+            'aria-hidden': [r'^true$'],
+            'data-honeypot': [r'.+']
         }
         
         # Suspicious link text patterns
@@ -69,6 +76,8 @@ class HoneypotDetector:
                         position: styles.position,
                         left: parseInt(styles.left),
                         top: parseInt(styles.top),
+                        rectLeft: rect.left,
+                        rectTop: rect.top,
                         
                         // Size
                         width: rect.width,
@@ -110,7 +119,11 @@ class HoneypotDetector:
                 reasons.append(f"opacity: {visibility_info['opacity']}")
             
             if visibility_info['position'] in ['absolute', 'fixed']:
-                if visibility_info['left'] < -9000 or visibility_info['top'] < -9000:
+                off_screen = (
+                    visibility_info['rectLeft'] < -9000
+                    or visibility_info['rectTop'] < -9000
+                )
+                if off_screen:
                     visibility_score = 0
                     reasons.append("positioned off-screen")
             
@@ -176,12 +189,14 @@ class HoneypotDetector:
                         if re.search(pattern, str(attr_value), re.IGNORECASE):
                             reasons.append(f"{attr_name} matches '{pattern}'")
             
-            if attrs.get('tabIndex', 0) < 0:
+            if attrs.get('tabIndex', 0) < 0 and reasons:
+                # A negative tabIndex alone is common on decorative elements;
+                # treat it as supporting evidence only.
                 reasons.append("negative tabIndex (not keyboard accessible)")
-            
+
             if attrs.get('tagName') == 'input':
                 name = attrs.get('name', '').lower()
-                if any(x in name for x in ['confirm', 'check', 'verify', 'url', 'website']):
+                if any(x in name for x in ['confirm', 'check', 'verify']):
                     if attrs.get('type') in ['email', 'url', 'text']:
                         reasons.append("suspicious confirmation field")
             
@@ -191,17 +206,48 @@ class HoneypotDetector:
         except Exception:
             return False, []
     
+    def _css_selector(self, handle: ElementHandle) -> str:
+        """Build a stable, unique CSS selector for reporting."""
+        try:
+            return handle.evaluate("""
+                (element) => {
+                    const parts = [];
+                    let el = element;
+                    while (el && el.nodeType === 1) {
+                        if (el.id) {
+                            parts.unshift(`[id="${el.id}"]`);
+                            break;
+                        }
+                        let part = el.tagName.toLowerCase();
+                        const parent = el.parentElement;
+                        if (parent) {
+                            const siblings = Array.from(parent.children)
+                                .filter(child => child.tagName === el.tagName);
+                            if (siblings.length > 1) {
+                                part += `:nth-of-type(${siblings.indexOf(el) + 1})`;
+                            }
+                        }
+                        parts.unshift(part);
+                        el = parent;
+                    }
+                    return parts.join(' > ');
+                }
+            """)
+        except Exception:
+            return "unknown"
+
     def detect_honeypot_links(self, page: Page) -> List[HoneypotElement]:
         honeypots = []
         
         try:
             links = page.locator('a').all()
             
-            for i, link in enumerate(links):
+            for link in links:
                 try:
-                    is_invisible, visibility_score = self.is_invisible_element(page, link.element_handle())
-                    
-                    matches_pattern, pattern_reasons = self.check_honeypot_patterns(link.element_handle())
+                    handle = link.element_handle()
+                    is_invisible, visibility_score = self.is_invisible_element(page, handle)
+
+                    matches_pattern, pattern_reasons = self.check_honeypot_patterns(handle)
                     
                     text = link.text_content() or ''
                     has_suspicious_text = any(
@@ -218,9 +264,8 @@ class HoneypotDetector:
                         reasons.append(f"suspicious text: '{text}'")
                     
                     if reasons:
-                        link.get_attribute('href')
                         honeypots.append(HoneypotElement(
-                            selector=f"a:nth-of-type({i+1})",
+                            selector=self._css_selector(handle),
                             element_type='link',
                             reason='; '.join(reasons),
                             visibility_score=visibility_score,
@@ -231,7 +276,7 @@ class HoneypotDetector:
                     continue
         
         except Exception as e:
-            print(f"Error detecting honeypot links: {e}")
+            safe_print(f"Error detecting honeypot links: {e}")
         
         return honeypots
     
@@ -241,11 +286,12 @@ class HoneypotDetector:
         try:
             inputs = page.locator('input, textarea').all()
             
-            for i, input_field in enumerate(inputs):
+            for input_field in inputs:
                 try:
-                    is_invisible, visibility_score = self.is_invisible_element(page, input_field.element_handle())
-                    
-                    matches_pattern, pattern_reasons = self.check_honeypot_patterns(input_field.element_handle())
+                    handle = input_field.element_handle()
+                    is_invisible, visibility_score = self.is_invisible_element(page, handle)
+
+                    matches_pattern, pattern_reasons = self.check_honeypot_patterns(handle)
                     
                     reasons = []
                     if is_invisible:
@@ -258,7 +304,7 @@ class HoneypotDetector:
                         input_type = input_field.get_attribute('type') or 'text'
                         
                         honeypots.append(HoneypotElement(
-                            selector=f"input:nth-of-type({i+1})",
+                            selector=self._css_selector(handle),
                             element_type=f'input[{input_type}]',
                             reason='; '.join(reasons),
                             visibility_score=visibility_score,
@@ -269,7 +315,7 @@ class HoneypotDetector:
                     continue
         
         except Exception as e:
-            print(f"Error detecting honeypot inputs: {e}")
+            safe_print(f"Error detecting honeypot inputs: {e}")
         
         return honeypots
     
@@ -295,25 +341,16 @@ class HoneypotDetector:
         Returns:
             List of safe Locator objects
         """
+        # Report all honeypots for callers that want the diagnostics.
         self.detect_all_honeypots(page)
-        
-        all_elements = page.locator(selector).all()
-        
-        safe_elements = []
-        honeypot_indices = set()
-        
-        for hp in self.detected_honeypots:
-            if selector in hp.selector:
-                # Extract index from selector like "a:nth-of-type(5)"
-                match = re.search(r'nth-of-type\((\d+)\)', hp.selector)
-                if match:
-                    honeypot_indices.add(int(match.group(1)) - 1)  # Convert to 0-based
-        
-        for i, element in enumerate(all_elements):
-            if i not in honeypot_indices:
-                safe_elements.append(element)
-        
-        return safe_elements
+
+        # Filter each matched element directly.  Deriving indices from report
+        # selectors broke for any qualified selector (e.g. 'a.titlelink').
+        return [
+            element
+            for element in page.locator(selector).all()
+            if self.is_safe_to_click(page, element)
+        ]
     
     def is_safe_to_click(self, page: Page, element: Locator) -> bool:
         """
@@ -347,27 +384,31 @@ class HoneypotDetector:
                     return False
             
             return True
-            
+
         except Exception:
             return False
-    
+
+    def is_safe_element(self, page: Page, element: Locator) -> bool:
+        """Backwards-compatible alias of :meth:`is_safe_to_click`."""
+        return self.is_safe_to_click(page, element)
+
     def print_report(self):
         if not self.detected_honeypots:
-            print("✓ No honeypots detected!")
+            safe_print("✓ No honeypots detected!")
             return
         
-        print(f"\n⚠️  Detected {len(self.detected_honeypots)} honeypot elements:")
-        print("=" * 80)
+        safe_print(f"\n⚠️  Detected {len(self.detected_honeypots)} honeypot elements:")
+        safe_print("=" * 80)
         
         for i, hp in enumerate(self.detected_honeypots, 1):
-            print(f"\n{i}. {hp.element_type.upper()}")
-            print(f"   Selector: {hp.selector}")
-            print(f"   Visibility Score: {hp.visibility_score:.2f}")
-            print(f"   Reason: {hp.reason}")
+            safe_print(f"\n{i}. {hp.element_type.upper()}")
+            safe_print(f"   Selector: {hp.selector}")
+            safe_print(f"   Visibility Score: {hp.visibility_score:.2f}")
+            safe_print(f"   Reason: {hp.reason}")
             if hp.text:
-                print(f"   Text/Name: {hp.text}")
+                safe_print(f"   Text/Name: {hp.text}")
         
-        print("\n" + "=" * 80)
+        safe_print("\n" + "=" * 80)
     
     def save_report(self, filepath: str):
         report = {
@@ -387,7 +428,7 @@ class HoneypotDetector:
         with open(filepath, 'w') as f:
             json.dump(report, f, indent=2)
         
-        print(f"Report saved to {filepath}")
+        safe_print(f"Report saved to {filepath}")
 
 
 # Example 1: Detect honeypots on a page
@@ -438,7 +479,7 @@ def example_detect_honeypots():
         </html>
         """)
         
-        print("\n🔍 Scanning page for honeypots...")
+        safe_print("\n🔍 Scanning page for honeypots...")
         detector.detect_all_honeypots(page)
         
         detector.print_report()
@@ -472,20 +513,20 @@ def example_safe_link_clicking():
         </html>
         """)
         
-        print("\n🔍 Getting safe clickable links...")
+        safe_print("\n🔍 Getting safe clickable links...")
         safe_links = detector.get_safe_clickable_elements(page, 'a')
         
-        print(f"✓ Found {len(safe_links)} safe links out of {len(page.locator('a').all())} total")
+        safe_print(f"✓ Found {len(safe_links)} safe links out of {len(page.locator('a').all())} total")
         
-        print("\n📋 Safe links:")
+        safe_print("\n📋 Safe links:")
         for i, link in enumerate(safe_links, 1):
             text = link.text_content()
-            print(f"  {i}. {text}")
+            safe_print(f"  {i}. {text}")
         
-        print("\n🖱️  Clicking safe links only...")
+        safe_print("\n🖱️  Clicking safe links only...")
         for link in safe_links:
             text = link.text_content()
-            print(f"  Clicking: {text}")
+            safe_print(f"  Clicking: {text}")
             link.click()
             page.wait_for_timeout(500)
         
@@ -527,17 +568,17 @@ def example_safe_form_filling():
         </html>
         """)
         
-        print("\n🔍 Detecting honeypot fields...")
+        safe_print("\n🔍 Detecting honeypot fields...")
         detector.detect_all_honeypots(page)
         detector.print_report()
         
         all_inputs = page.locator('input[type="text"], input[type="email"], input[type="tel"]').all()
         
-        print("\n📝 Filling only safe fields...")
+        safe_print("\n📝 Filling only safe fields...")
         for input_field in all_inputs:
             if detector.is_safe_to_click(page, input_field):
                 name = input_field.get_attribute('name')
-                print(f"  ✓ Filling field: {name}")
+                safe_print(f"  ✓ Filling field: {name}")
                 
                 if name == 'name':
                     input_field.fill("John Doe")
@@ -547,7 +588,7 @@ def example_safe_form_filling():
                     input_field.fill("123-456-7890")
             else:
                 name = input_field.get_attribute('name')
-                print(f"  ⚠️  Skipping honeypot field: {name}")
+                safe_print(f"  ⚠️  Skipping honeypot field: {name}")
         
         page.wait_for_timeout(2000)
         browser.close()
@@ -565,26 +606,26 @@ def example_real_world_scraping():
         browser = p.chromium.launch(headless=False)
         page = browser.new_page()
         
-        print("\n🌐 Loading Hacker News...")
+        safe_print("\n🌐 Loading Hacker News...")
         page.goto("https://news.ycombinator.com")
         
-        print("\n🔍 Scanning for honeypots...")
+        safe_print("\n🔍 Scanning for honeypots...")
         detected = detector.detect_all_honeypots(page)
         
         if detected:
             detector.print_report()
         else:
-            print("✓ No honeypots detected on this page")
+            safe_print("✓ No honeypots detected on this page")
         
-        print("\n🔗 Extracting safe article links...")
+        safe_print("\n🔗 Extracting safe article links...")
         safe_links = detector.get_safe_clickable_elements(page, 'a.titlelink')
         
-        print(f"✓ Found {len(safe_links)} safe article links")
+        safe_print(f"✓ Found {len(safe_links)} safe article links")
         
         if safe_links:
             first_safe_link = safe_links[0]
             title = first_safe_link.text_content()
-            print(f"\n🖱️  Clicking safe link: {title}")
+            safe_print(f"\n🖱️  Clicking safe link: {title}")
             first_safe_link.click()
             
             time.sleep(2)
@@ -593,22 +634,22 @@ def example_real_world_scraping():
 
 
 if __name__ == "__main__":
-    print("=" * 80)
-    print("Honeypot Detection and Evasion Examples")
-    print("=" * 80)
+    safe_print("=" * 80)
+    safe_print("Honeypot Detection and Evasion Examples")
+    safe_print("=" * 80)
     
-    print("\nExample 1: Detect Honeypots")
-    print("-" * 80)
+    safe_print("\nExample 1: Detect Honeypots")
+    safe_print("-" * 80)
     example_detect_honeypots()
     
-    print("\n\nExample 2: Safe Link Clicking")
-    print("-" * 80)
+    safe_print("\n\nExample 2: Safe Link Clicking")
+    safe_print("-" * 80)
     example_safe_link_clicking()
     
-    print("\n\nExample 3: Safe Form Filling")
-    print("-" * 80)
+    safe_print("\n\nExample 3: Safe Form Filling")
+    safe_print("-" * 80)
     example_safe_form_filling()
     
-    print("\n\nExample 4: Real-World Scraping")
-    print("-" * 80)
+    safe_print("\n\nExample 4: Real-World Scraping")
+    safe_print("-" * 80)
     example_real_world_scraping()

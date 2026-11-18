@@ -63,6 +63,8 @@ print(results)
 | `proxies` | `list[ProxyServer]` | `[]` | Proxy servers to rotate through |
 | `use_tor` | `bool` | `False` | Enable Tor SOCKS5 proxy |
 | `tor_port` | `int` | `9050` | Tor SOCKS port |
+| `tor_control_port` | `int` | `9051` | Tor control port (for identity renewal) |
+| `tor_renew_on_rotation` | `bool` | `False` | Request a new Tor circuit on each session rotation |
 | `user_agents` | `list[str]` | built-in | Custom user agent list |
 | `rotate_user_agent` | `bool` | `True` | Rotate user agent per session |
 | `typing_speed_range` | `tuple[int,int]` | `(50,150)` | Keystroke delay in ms |
@@ -80,16 +82,25 @@ print(results)
 | `browser_type` | `str` | `"chromium"` | `chromium`, `firefox`, or `webkit` |
 | `max_retries` | `int` | `3` | Retry attempts per URL |
 | `retry_backoff` | `float` | `1.5` | Exponential backoff base |
+| `max_retry_backoff` | `float` | `30.0` | Cap for exponential backoff (s) |
+| `navigation_timeout` | `int \| None` | `30000` | Per-navigation timeout (ms); `None` disables it |
 | `proxy_failover` | `bool` | `True` | Rotate proxy on failure |
+| `proxy_cooldown` | `float` | `5.0` | How long a failed proxy is benched (s) |
 | `circuit_breaker_threshold` | `int` | `5` | Consecutive failures before cooldown |
 | `circuit_breaker_cooldown` | `float` | `30.0` | Cooldown duration (s) |
 | `adaptive_delays` | `bool` | `True` | Increase delays after failures |
 | `enable_proxy_health` | `bool` | `True` | Track and prefer healthy proxies |
 
+All numeric options are validated when `ScraperConfig` is constructed; invalid
+values raise `ValueError` immediately rather than failing mid-scrape.
+
 ## Project Structure
 
 ```
-anti_scraping_playwright/   # Python package
+anti_scraping_playwright/       # Python package
+├── __init__.py                 # Public API exports
+├── _compat.py                  # Cross-platform output + optional deps
+├── _stealth_scripts.py         # Shared, idempotent init scripts
 ├── scraper.py
 ├── proxy.py
 ├── stealth.py
@@ -101,9 +112,17 @@ anti_scraping_playwright/   # Python package
 examples/
 └── exercise.py
 tests/
-└── test_config.py
+├── test_clean_sessions.py
+├── test_compat.py
+├── test_config.py
+├── test_examples_smoke.py
+├── test_honeypot_filtering.py
+├── test_scraper_reliability.py
+└── test_stealth_context.py
 docs/
 ```
+
+See `docs/structure.md` and `architecture.txt` for the full repository layout.
 
 ## Running Tests
 

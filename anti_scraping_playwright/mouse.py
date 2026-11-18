@@ -29,8 +29,9 @@ def human_mouse_move(
     if duration is None:
         distance = math.dist(start, end)
         duration = min(max(distance / 800, 0.4), 1.6)
+    duration = max(duration, 0.01)
 
-    steps = int(duration * random.randint(90, 140))
+    steps = max(1, int(duration * random.randint(90, 140)))
 
     x0, y0 = start
     x1, y1 = end
@@ -71,8 +72,12 @@ def move_to_element(page, selector: str):
     target_x = box["x"] + box["width"] * random.uniform(0.3, 0.7)
     target_y = box["y"] + box["height"] * random.uniform(0.3, 0.7)
 
-    start_x = random.randint(0, int(box["x"] + 50))
-    start_y = random.randint(0, int(box["y"] + 50))
+    viewport = getattr(page, "viewport_size", None) or {}
+    max_x = int(viewport.get("width", max(1, box["x"] + 50))) - 1
+    max_y = int(viewport.get("height", max(1, box["y"] + 50))) - 1
+
+    start_x = random.randint(0, max(0, min(max_x, int(box["x"] + 50))))
+    start_y = random.randint(0, max(0, min(max_y, int(box["y"] + 50))))
 
     page.mouse.move(start_x, start_y)
     human_mouse_move(page, (start_x, start_y), (target_x, target_y))

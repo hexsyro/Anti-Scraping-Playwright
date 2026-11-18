@@ -1,17 +1,22 @@
 import random
-from playwright.sync_api import sync_playwright
+
+try:
+    from playwright.sync_api import sync_playwright
+except ImportError:  # pragma: no cover - allows import without Playwright
+    from typing import Any
+    sync_playwright = Any
+
+from ._compat import require_playwright
+from ._stealth_scripts import ALL_SCRIPTS, StealthScriptInstaller
 
 
 class StealthContext:
-    """
-    Reusable Playwright stealth context
-    """
+    """Reusable Playwright stealth context."""
 
     USER_AGENTS = [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/120.0.0.0 Safari/537.36",
-
         "Mozilla/5.0 (X11; Linux x86_64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/119.0.0.0 Safari/537.36",
@@ -33,8 +38,10 @@ class StealthContext:
         self.browser = None
         self.context = None
         self.page = None
+        self._script_installer = StealthScriptInstaller()
 
     def launch(self):
+        require_playwright()
         self.playwright = sync_playwright().start()
 
         launch_args = {
@@ -46,11 +53,8 @@ class StealthContext:
                 "--disable-dev-shm-usage",
             ],
         }
-
         if self.proxy:
             launch_args["proxy"] = self.proxy
-
-        self.browser = self.playwright.chromium.launch(**launch_args)
 
         context_args = {
             "user_agent": random.choice(self.USER_AGENTS),
@@ -60,55 +64,49 @@ class StealthContext:
             "timezone_id": "Asia/Colombo",
             "java_script_enabled": True,
         }
-
         if self.storage_state:
             context_args["storage_state"] = self.storage_state
 
-        if self.user_data_dir:
-            self.context = self.browser.new_context(**context_args)
-        else:
-            self.context = self.browser.new_context(**context_args)
+        try:
+            if self.user_data_dir:
+                # A persistent profile is owned by the context, not by a
+                # separately launched browser.
+                self.context = self.playwright.chromium.launch_persistent_context(
+                    self.user_data_dir, **launch_args, **context_args
+                )
+                self.browser = None
+            else:
+                self.browser = self.playwright.chromium.launch(**launch_args)
+                self.context = self.browser.new_context(**context_args)
 
-        self._apply_stealth_scripts()
-
-        self.page = self.context.new_page()
-        return self.page
+            self._apply_stealth_scripts()
+            self.page = self.context.new_page()
+            return self.page
+        except Exception:
+            # Never leak the Playwright driver if setup fails.
+            self.close()
+            raise
 
     def _apply_stealth_scripts(self):
-        self.context.add_init_script("""
-        // webdriver
-        Object.defineProperty(navigator, 'webdriver', {
-            get: () => undefined
-        });
-
-        // languages
-        Object.defineProperty(navigator, 'languages', {
-            get: () => ['en-US', 'en']
-        });
-
-        // plugins
-        Object.defineProperty(navigator, 'plugins', {
-            get: () => [1, 2, 3, 4, 5]
-        });
-
-        // chrome runtime
-        window.chrome = {
-            runtime: {}
-        };
-
-        // permissions fix
-        const originalQuery = navigator.permissions.query;
-        navigator.permissions.query = (parameters) =>
-            parameters.name === 'notifications'
-                ? Promise.resolve({ state: Notification.permission })
-                : originalQuery(parameters);
-        """)
+        self._script_installer.install(self.context, ALL_SCRIPTS)
 
     def save_storage(self, path: str = "auth.json"):
+        if self.context is None:
+            raise RuntimeError("launch() must be called before save_storage()")
         self.context.storage_state(path=path)
 
     def close(self):
-        if self.browser:
-            self.browser.close()
-        if self.playwright:
-            self.playwright.stop()
+        try:
+            if self.context is not None:
+                self.context.close()
+        finally:
+            try:
+                if self.browser is not None:
+                    self.browser.close()
+            finally:
+                if self.playwright is not None:
+                    self.playwright.stop()
+                self.context = None
+                self.browser = None
+                self.page = None
+                self.playwright = None

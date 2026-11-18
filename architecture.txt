@@ -1,20 +1,56 @@
 .
-├── AntiFingerprinting.py
+├── .editorconfig
+├── .gitattributes
+├── .github/
+│   ├── FUNDING.yml
+│   ├── ISSUE_TEMPLATE/
+│   │   ├── bug_report.md
+│   │   └── feature_request.md
+│   ├── PULL_REQUEST_TEMPLATE.md
+│   └── workflows/
+│       └── ci.yml
+├── .gitignore
+├── .python-version
+├── anti_scraping_playwright/       # Python package
+│   ├── __init__.py                 # Public API exports
+│   ├── _compat.py                  # Cross-platform output + optional deps
+│   ├── _stealth_scripts.py         # Shared, idempotent init scripts
+│   ├── behavior.py                 # Human-like interaction helpers
+│   ├── fingerprint.py              # Anti-fingerprinting smoke test
+│   ├── honeypot.py                 # Honeypot detection and filtering
+│   ├── mouse.py                    # Bezier/human mouse movement
+│   ├── proxy.py                    # Clean sessions and cookie handling
+│   ├── py.typed
+│   ├── scraper.py                  # AntiBlockingScraper + ScraperConfig
+│   ├── stealth.py                  # Reusable stealth context
+│   └── user_agents.py              # User agent rotation
+├── docs/
+│   ├── banner.png
+│   └── structure.md
+├── env.example
+├── examples/
+│   └── exercise.py                 # Guided Hacker News exercise
+├── tests/
+│   ├── __init__.py
+│   ├── test_clean_sessions.py
+│   ├── test_compat.py
+│   ├── test_config.py
+│   ├── test_examples_smoke.py
+│   ├── test_honeypot_filtering.py
+│   ├── test_scraper_reliability.py
+│   └── test_stealth_context.py
+├── CHANGELOG.md
 ├── CODE_OF_CONDUCT.md
 ├── CONTRIBUTING.md
-├── DelayBehavior.py
-├── Ex.py
-├── HoneyPotEscape.py
 ├── LICENSE
-├── MouseMovement.py
-├── ProxyServers.py
+├── Makefile
 ├── README.md
+├── RELEASES.md
 ├── SECURITY.md
-├── StealthContext.py
-├── UserAgentRotator.py
-├── anti_block_scraper.py
+├── VERSION
 ├── architecture.txt
-├── commit.sh
-└── env.example
-
-1 directory, 17 files
+├── pyproject.toml
+├── release_notes.md
+├── releases/
+│   └── anti-scraping-playwright-2.0.0.zip
+└── requirements.txt

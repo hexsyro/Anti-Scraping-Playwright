@@ -21,16 +21,21 @@ DIFFICULTY: Beginner to Intermediate
 TIME: 30-45 minutes
 
 REQUIREMENTS:
-- anti_block_scraper.py (the main scraper file)
+- anti_scraping_playwright package (install with `pip install -e .`)
 - Playwright installed
 """
 
 from anti_scraping_playwright import AntiBlockingScraper, ScraperConfig
+from anti_scraping_playwright._compat import require_playwright, safe_print
 
 from anti_scraping_playwright.scraper import sync_playwright
 import json
 from datetime import datetime
-from playwright.sync_api import Page
+
+try:
+    from playwright.sync_api import Page
+except ImportError:  # pragma: no cover - type hints only
+    from typing import Any as Page
 
 # ============================================================================
 # STEP 1: CONFIGURATION (⭐ YOUR TASK: Fill in the config)
@@ -77,7 +82,7 @@ def step2_scrape_front_page(page: Page, url: str, scraper: AntiBlockingScraper):
     HINT: Use page.locator().all() to get all elements
     """
     
-    print(f"📰 Scraping: {url}")
+    safe_print(f"📰 Scraping: {url}")
     
     # TODO: Add human behavior - scroll the page
     scraper.human_scroll(page, scrolls=2)
@@ -109,10 +114,10 @@ def step2_scrape_front_page(page: Page, url: str, scraper: AntiBlockingScraper):
                 'scraped_at': datetime.now().isoformat()
             })
             
-            print(f"  ✓ {rank} {title[:50]}...")
+            safe_print(f"  ✓ {rank} {title[:50]}...")
             
         except Exception as e:
-            print(f"  ✗ Error extracting article: {e}")
+            safe_print(f"  ✗ Error extracting article: {e}")
             continue
     
     return results
@@ -138,7 +143,7 @@ def step3_scrape_with_metadata(page: Page, url: str, scraper: AntiBlockingScrape
     HINT: The metadata row is the next sibling after each article row
     """
     
-    print(f"📰 Scraping with metadata: {url}")
+    safe_print(f"📰 Scraping with metadata: {url}")
     
     # Human behavior
     scraper.human_scroll(page, scrolls=3)
@@ -155,10 +160,12 @@ def step3_scrape_with_metadata(page: Page, url: str, scraper: AntiBlockingScrape
             title = title_element.text_content()
             article_url = title_element.get_attribute('href')
             
-            # TODO: Get the metadata row (next sibling)
-            # HINT: Use page.locator(f'#\\3{article_id}').locator('xpath=following-sibling::tr[1]')
+            # TODO: Get the metadata row (next sibling). Numeric IDs are not
+            # valid CSS identifiers, so use an attribute selector.
             article_id = article.get_attribute('id')
-            metadata_row = page.locator(f'#{article_id}').locator('xpath=following-sibling::tr[1]')
+            metadata_row = page.locator(
+                f'[id="{article_id}"]'
+            ).locator('xpath=following-sibling::tr[1]')
             
             # TODO: Extract points
             points = "N/A"
@@ -200,10 +207,10 @@ def step3_scrape_with_metadata(page: Page, url: str, scraper: AntiBlockingScrape
                 'scraped_at': datetime.now().isoformat()
             })
             
-            print(f"  ✓ {rank} {title[:40]}... | {points} | by {author}")
+            safe_print(f"  ✓ {rank} {title[:40]}... | {points} | by {author}")
             
         except Exception as e:
-            print(f"  ✗ Error: {e}")
+            safe_print(f"  ✗ Error: {e}")
             continue
     
     return results
@@ -229,10 +236,11 @@ def step4_scrape_multiple_pages(scraper: AntiBlockingScraper, num_pages: int = 3
     BONUS: Handle the case where "More" link doesn't exist
     """
     
-    print(f"🔄 Scraping {num_pages} pages...")
+    safe_print(f"🔄 Scraping {num_pages} pages...")
     
     all_results = []
-    
+    require_playwright()
+
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=scraper.config.headless,
@@ -244,46 +252,52 @@ def step4_scrape_multiple_pages(scraper: AntiBlockingScraper, num_pages: int = 3
         
         # Start with the front page
         current_url = "https://news.ycombinator.com/"
+        already_navigated = False
+
+        try:
+            for page_num in range(1, num_pages + 1):
+                safe_print(f"\n{'='*60}")
+                safe_print(f"Page {page_num}/{num_pages}")
+                safe_print('='*60)
+            
+                # Clicking "More" already navigated us; avoid a duplicate load.
+                if not already_navigated:
+                    scraper.navigate(page, current_url)
+                already_navigated = False
+
+                # TODO: Scrape the current page
+                results = step3_scrape_with_metadata(page, current_url, scraper)
+                all_results.extend(results)
+            
+                # TODO: Find and click the "More" link if not last page
+                if page_num < num_pages:
+                    try:
+                        # Find the "More" link
+                        more_link = page.locator('a.morelink').first
+                        next_url = more_link.get_attribute('href')
+                    
+                        safe_print(f"\n🔗 Found 'More' link: {next_url}")
+                    
+                        # Human-like delay before clicking
+                        scraper.random_delay(1.0, 2.0)
+                    
+                        # TODO: Click using safe_click or navigate directly
+                        scraper.safe_click(page, 'a.morelink')
+                    
+                        # Wait for new page to load
+                        page.wait_for_load_state('networkidle')
+                    
+                        # Update current URL (already loaded, no second goto needed)
+                        current_url = page.url
+                        already_navigated = True
+                    
+                    except Exception as e:
+                        safe_print(f"  ⚠️ No more pages or error: {e}")
+                        break
         
-        for page_num in range(1, num_pages + 1):
-            print(f"\n{'='*60}")
-            print(f"Page {page_num}/{num_pages}")
-            print('='*60)
-            
-            # Navigate to the page
-            scraper.navigate(page, current_url)
-            
-            # TODO: Scrape the current page
-            results = step3_scrape_with_metadata(page, current_url, scraper)
-            all_results.extend(results)
-            
-            # TODO: Find and click the "More" link if not last page
-            if page_num < num_pages:
-                try:
-                    # Find the "More" link
-                    more_link = page.locator('a.morelink').first
-                    next_url = more_link.get_attribute('href')
-                    
-                    print(f"\n🔗 Found 'More' link: {next_url}")
-                    
-                    # Human-like delay before clicking
-                    scraper.random_delay(1.0, 2.0)
-                    
-                    # TODO: Click using safe_click or navigate directly
-                    scraper.safe_click(page, 'a.morelink')
-                    
-                    # Wait for new page to load
-                    page.wait_for_load_state('networkidle')
-                    
-                    # Update current URL
-                    current_url = page.url
-                    
-                except Exception as e:
-                    print(f"  ⚠️ No more pages or error: {e}")
-                    break
-        
-        context.close()
-        browser.close()
+        finally:
+            context.close()
+            browser.close()
     
     return all_results
 
@@ -309,7 +323,7 @@ def step5_bonus_scrape_comments(scraper: AntiBlockingScraper, article_url: str):
     This is more advanced! Try it after completing steps 1-4.
     """
     
-    print(f"💬 Scraping comments from: {article_url}")
+    safe_print(f"💬 Scraping comments from: {article_url}")
     
     # TODO: Implement comment scraping
     # This is a challenge - try to figure it out!
@@ -324,68 +338,66 @@ def step5_bonus_scrape_comments(scraper: AntiBlockingScraper, article_url: str):
 def run_exercise():
     """Run the complete exercise."""
     
-    print("="*70)
-    print("HACKER NEWS SCRAPER EXERCISE")
-    print("="*70)
+    safe_print("="*70)
+    safe_print("HACKER NEWS SCRAPER EXERCISE")
+    safe_print("="*70)
     
     # STEP 1: Create configuration
-    print("\n📋 STEP 1: Creating configuration...")
+    safe_print("\n📋 STEP 1: Creating configuration...")
     config = step1_create_config()
     scraper = AntiBlockingScraper(config)
-    print("✓ Configuration created")
+    safe_print("✓ Configuration created")
     
     # STEP 2: Basic scraping
-    print("\n📋 STEP 2: Basic scraping...")
+    safe_print("\n📋 STEP 2: Basic scraping...")
     
     def basic_scrape(page, url):
         return step2_scrape_front_page(page, url, scraper)
     
-    results_basic = scraper.scrape_single(
-        "https://news.ycombinator.com/",
-        basic_scrape
-    )
+    results_basic = scraper.scrape_with_rotation(
+        ["https://news.ycombinator.com/"], basic_scrape
+    )[0] or []
     
-    print(f"\n✓ Scraped {len(results_basic)} articles (basic)")
+    safe_print(f"\n✓ Scraped {len(results_basic)} articles (basic)")
     
     # Save basic results
     with open("hn_articles_basic.json", "w") as f:
         json.dump(results_basic, f, indent=2)
-    print("✓ Saved to hn_articles_basic.json")
+    safe_print("✓ Saved to hn_articles_basic.json")
     
     # STEP 3: Advanced scraping
-    print("\n📋 STEP 3: Advanced scraping with metadata...")
+    safe_print("\n📋 STEP 3: Advanced scraping with metadata...")
     
     def advanced_scrape(page, url):
         return step3_scrape_with_metadata(page, url, scraper)
     
-    results_advanced = scraper.scrape_single(
-        "https://news.ycombinator.com/",
-        advanced_scrape
-    )
+    results_advanced = scraper.scrape_with_rotation(
+        ["https://news.ycombinator.com/"], advanced_scrape
+    )[0] or []
     
-    print(f"\n✓ Scraped {len(results_advanced)} articles (advanced)")
+    safe_print(f"\n✓ Scraped {len(results_advanced)} articles (advanced)")
     
     # Save advanced results
     with open("hn_articles_advanced.json", "w") as f:
         json.dump(results_advanced, f, indent=2)
-    print("✓ Saved to hn_articles_advanced.json")
+    safe_print("✓ Saved to hn_articles_advanced.json")
     
     # STEP 4: Multiple pages
-    print("\n📋 STEP 4: Scraping multiple pages...")
+    safe_print("\n📋 STEP 4: Scraping multiple pages...")
     results_multi = step4_scrape_multiple_pages(scraper, num_pages=2)
     
-    print(f"\n✓ Scraped {len(results_multi)} articles from multiple pages")
+    safe_print(f"\n✓ Scraped {len(results_multi)} articles from multiple pages")
     
     # Save multi-page results
     with open("hn_articles_multi_page.json", "w") as f:
         json.dump(results_multi, f, indent=2)
-    print("✓ Saved to hn_articles_multi_page.json")
+    safe_print("✓ Saved to hn_articles_multi_page.json")
     
     # Summary
-    print("\n" + "="*70)
-    print("EXERCISE COMPLETE! 🎉")
-    print("="*70)
-    print(f"""
+    safe_print("\n" + "="*70)
+    safe_print("EXERCISE COMPLETE! 🎉")
+    safe_print("="*70)
+    safe_print(f"""
 Summary:
 - Basic scraping: {len(results_basic)} articles
 - Advanced scraping: {len(results_advanced)} articles  
@@ -414,7 +426,7 @@ Great job! 🚀
 def validate_exercise():
     """Check if the exercise was completed correctly."""
     
-    print("\n🔍 VALIDATING YOUR SOLUTION...\n")
+    safe_print("\n🔍 VALIDATING YOUR SOLUTION...\n")
     
     errors = []
     warnings = []
@@ -438,7 +450,7 @@ def validate_exercise():
                 if len(data) == 0:
                     warnings.append(f"{file} is empty")
                 else:
-                    print(f"✓ {file}: {len(data)} articles")
+                    safe_print(f"✓ {file}: {len(data)} articles")
     
     # Check required fields
     try:
@@ -451,25 +463,25 @@ def validate_exercise():
                     if field not in first_article:
                         errors.append(f"Missing field: {field}")
                     else:
-                        print(f"✓ Field '{field}' present")
+                        safe_print(f"✓ Field '{field}' present")
     except Exception as e:
         errors.append(f"Error validating advanced scraping: {e}")
     
     # Print results
-    print("\n" + "="*70)
+    safe_print("\n" + "="*70)
     if errors:
-        print("❌ VALIDATION FAILED")
+        safe_print("❌ VALIDATION FAILED")
         for error in errors:
-            print(f"  ✗ {error}")
+            safe_print(f"  ✗ {error}")
     else:
-        print("✅ VALIDATION PASSED!")
+        safe_print("✅ VALIDATION PASSED!")
     
     if warnings:
-        print("\n⚠️  WARNINGS:")
+        safe_print("\n⚠️  WARNINGS:")
         for warning in warnings:
-            print(f"  • {warning}")
+            safe_print(f"  • {warning}")
     
-    print("="*70)
+    safe_print("="*70)
 
 
 # ============================================================================
@@ -480,7 +492,7 @@ if __name__ == "__main__":
     # Import required
     from playwright.sync_api import sync_playwright
     
-    print("""
+    safe_print("""
 ╔════════════════════════════════════════════════════════════════════╗
 ║                  HACKER NEWS SCRAPER EXERCISE                      ║
 ╚════════════════════════════════════════════════════════════════════╝
@@ -489,14 +501,14 @@ Welcome! This exercise will teach you how to use the anti-blocking
 web scraper by building a real Hacker News article scraper.
 
 BEFORE YOU START:
-1. Make sure anti_block_scraper.py is in the same directory
+1. Install the package: pip install -e .
 2. Install Playwright: pip install playwright
 3. Install browsers: playwright install chromium
 
 STEPS:
 1. Review the TODO comments in each function
 2. Complete the missing code
-3. Run: python scraper_exercise.py
+3. Run: python examples/exercise.py
 4. Check the generated JSON files
 
 Ready? Let's begin!
@@ -512,11 +524,11 @@ Ready? Let's begin!
         validate_exercise()
         
     except KeyboardInterrupt:
-        print("\n\n⚠️  Exercise interrupted by user")
+        safe_print("\n\n⚠️  Exercise interrupted by user")
     except Exception as e:
-        print(f"\n\n❌ Error running exercise: {e}")
-        print("\nTIP: Make sure anti_block_scraper.py is in the same directory")
+        safe_print(f"\n\n❌ Error running exercise: {e}")
+        safe_print("\nTIP: Install the package with `pip install -e .` first")
         import traceback
         traceback.print_exc()
     
-    print("\n👋 Exercise complete! Happy scraping!")
+    safe_print("\n👋 Exercise complete! Happy scraping!")

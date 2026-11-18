@@ -1,6 +1,14 @@
 import random
-from playwright.sync_api import sync_playwright, Browser, BrowserContext
 from typing import List, Optional
+
+try:
+    from playwright.sync_api import sync_playwright, Browser, BrowserContext
+except ImportError:  # pragma: no cover - allows import without Playwright
+    from typing import Any
+    sync_playwright = None
+    Browser = BrowserContext = Any
+
+from ._compat import safe_print
 
 class UserAgentRotator:
     
@@ -61,7 +69,7 @@ def example_random_rotation():
             page = context.new_page()
             
             page.goto("https://httpbin.org/headers")
-            print(f"Request {i+1} User-Agent:", page.text_content("body"))
+            safe_print(f"Request {i+1} User-Agent:", page.text_content("body"))
             
             context.close()
         
@@ -86,7 +94,7 @@ def example_sequential_rotation():
             context = browser.new_context(user_agent=ua)
             page = context.new_page()
             
-            print(f"Visiting {url} with UA: {ua[:50]}...")
+            safe_print(f"Visiting {url} with UA: {ua[:50]}...")
             page.goto(url)
             page.wait_for_timeout(2000)
             
@@ -113,7 +121,7 @@ def example_custom_user_agents():
             page = context.new_page()
             
             page.goto("https://httpbin.org/user-agent")
-            print(f"Request {i+1}:", page.text_content("body"))
+            safe_print(f"Request {i+1}:", page.text_content("body"))
             
             context.close()
         
@@ -136,7 +144,7 @@ async def example_async_rotation():
             
             await page.goto("https://httpbin.org/user-agent")
             content = await page.text_content("body")
-            print(f"Async request {i+1}:", content)
+            safe_print(f"Async request {i+1}:", content)
             
             await context.close()
         
@@ -144,20 +152,20 @@ async def example_async_rotation():
 
 
 if __name__ == "__main__":
-    print("Example 1: Random Rotation")
-    print("-" * 50)
+    safe_print("Example 1: Random Rotation")
+    safe_print("-" * 50)
     example_random_rotation()
     
-    print("\n\nExample 2: Sequential Rotation")
-    print("-" * 50)
+    safe_print("\n\nExample 2: Sequential Rotation")
+    safe_print("-" * 50)
     example_sequential_rotation()
     
-    print("\n\nExample 3: Custom User Agents")
-    print("-" * 50)
+    safe_print("\n\nExample 3: Custom User Agents")
+    safe_print("-" * 50)
     example_custom_user_agents()
     
     # Uncomment to run async example
     # import asyncio
-    # print("\n\nExample 4: Async Rotation")
-    # print("-" * 50)
+    # safe_print("\n\nExample 4: Async Rotation")
+    # safe_print("-" * 50)
     # asyncio.run(example_async_rotation())
