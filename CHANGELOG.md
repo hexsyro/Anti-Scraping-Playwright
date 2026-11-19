@@ -44,6 +44,9 @@ All notable changes to this project are documented in this file.
 ### Changed
 - Refreshed `README.md`, `architecture.txt`, `docs/structure.md`, metadata and
   dependencies to match the packaged 2.0 layout; `docs/structure.md` is now UTF-8.
+- Pinned the Ruff lint rule set and target version in `pyproject.toml` and bounded
+  the dev dependency to `<1`, so newer Ruff releases with expanded default rules
+  no longer break CI unexpectedly.
 
 ## [2.0.0] - 2026-11-04
 

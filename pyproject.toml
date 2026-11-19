@@ -17,7 +17,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
-    "ruff>=0.15",
+    "ruff>=0.15,<1",
 ]
 
 [project.urls]
@@ -27,3 +27,12 @@ Repository = "https://github.com/hexsyro/Anti-Scraping-Playwright"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["anti_scraping_playwright*"]
+
+[tool.ruff]
+# Keep lint results deterministic across ruff versions: newer releases keep
+# expanding the default rule set, which would otherwise break CI unexpectedly.
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
